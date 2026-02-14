@@ -1,12 +1,14 @@
 #include <iostream>
 #include <vector>
+#include <cstdlib>
+#include <ctime>
 #include <cuda_runtime.h>
 
 #define OBSTACLE -1
 #define UNVISITED -2
 
-const int WIDTH = 8;
-const int HEIGHT = 8;
+const int WIDTH = 512;
+const int HEIGHT = 512;
 
 __global__
 void wave_step(int* grid, int level, int* changed) {
@@ -17,9 +19,9 @@ void wave_step(int* grid, int level, int* changed) {
     if (x >= WIDTH || y >= HEIGHT)
         return;
 
-    int idx = y * WIDTH + x;
+    int index = y * WIDTH + x;
 
-    if (grid[idx] == level) {
+    if (grid[index] == level) {
 
         int dr[4] = {-1, 1, 0, 0};
         int dc[4] = {0, 0, -1, 1};
@@ -43,36 +45,22 @@ void wave_step(int* grid, int level, int* changed) {
     }
 }
 
-void print_grid(const std::vector<int>& grid) {
-    for (int r = 0; r < HEIGHT; r++) {
-        for (int c = 0; c < WIDTH; c++) {
-            int val = grid[r*WIDTH + c];
-            if (val == OBSTACLE)
-                std::cout << " X ";
-            else if (val == UNVISITED)
-                std::cout << " . ";
-            else
-                std::cout << val << " ";
-        }
-        std::cout << "\n";
-    }
-    std::cout << "\n";
-}
-
 int main() {
 
     std::vector<int> h_grid(WIDTH * HEIGHT, UNVISITED);
 
-    h_grid[1*WIDTH + 1] = OBSTACLE;
-    h_grid[1*WIDTH + 2] = OBSTACLE;
-    h_grid[2*WIDTH + 4] = OBSTACLE;
-    h_grid[3*WIDTH + 3] = OBSTACLE;
-    h_grid[4*WIDTH + 5] = OBSTACLE;
+    srand((unsigned)time(0));
+
+    for (int i = 0; i < WIDTH * HEIGHT; i++) {
+        if (rand() % 100 < 30)
+            h_grid[i] = OBSTACLE;
+    }
 
     int sr = 0, sc = 0;
-    int tr = 7, tc = 7;
+    int tr = HEIGHT - 1, tc = WIDTH - 1;
 
     h_grid[sr*WIDTH + sc] = 0;
+    h_grid[tr*WIDTH + tc] = UNVISITED;
 
     int* d_grid;
     int* d_changed;
@@ -90,6 +78,11 @@ int main() {
     int level = 0;
     int changed;
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaEventRecord(start);
+
     do {
         changed = 0;
         cudaMemcpy(d_changed, &changed, sizeof(int),
@@ -105,17 +98,24 @@ int main() {
 
     } while (changed);
 
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+
     cudaMemcpy(h_grid.data(), d_grid,
                WIDTH * HEIGHT * sizeof(int),
                cudaMemcpyDeviceToHost);
-
-    print_grid(h_grid);
 
     if (h_grid[tr*WIDTH + tc] != UNVISITED)
         std::cout << "Target reached at level "
                   << h_grid[tr*WIDTH + tc] << "\n";
     else
         std::cout << "No path found\n";
+
+    std::cout << "GPU Execution Time: "
+              << milliseconds / 1000.0 << " seconds\n";
 
     cudaFree(d_grid);
     cudaFree(d_changed);
