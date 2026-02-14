@@ -103,7 +103,7 @@ int main() {
 
         level++;
 
-    } while (changed && h_grid[tr*WIDTH + tc] == UNVISITED);
+    } while (changed);
 
     cudaMemcpy(h_grid.data(), d_grid,
                WIDTH * HEIGHT * sizeof(int),
